@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FarmaERP</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .hero { text-align: center; padding: 3.5rem 2rem 2rem; }
+    .hero-logo { font-family: 'Syne', sans-serif; font-size: 2.6rem; font-weight: 800; letter-spacing: -0.04em; color: var(--accent); margin-bottom: 0.5rem; }
+    .hero p { color: var(--text-2); font-size: 1rem; margin-bottom: 3rem; }
+    .menu-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1.25rem; max-width: 920px; margin: 0 auto; }
+    .menu-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; padding: 2rem 1.5rem; text-align: center;
+      text-decoration: none; color: var(--text);
+      transition: border-color 0.2s, transform 0.2s;
+      position: relative; overflow: hidden;
+    }
+    .menu-card::after {
+      content: ''; position: absolute;
+      bottom: 0; left: 0; right: 0; height: 3px;
+      background: var(--accent);
+      transform: scaleX(0); transition: transform 0.2s;
+    }
+    .menu-card.green::after  { background: var(--success); }
+    .menu-card.blue::after   { background: var(--indigo); }
+    .menu-card.orange::after { background: var(--warning); }
+    .menu-card:hover { border-color: var(--border-2); transform: translateY(-3px); }
+    .menu-card:hover::after { transform: scaleX(1); }
+    .menu-card .icon { font-size: 2.4rem; margin-bottom: 1rem; }
+    .menu-card h3 { font-family: 'Syne', sans-serif; font-size: 1rem; font-weight: 700; margin-bottom: 0.4rem; }
+    .menu-card p  { font-size: 0.82rem; color: var(--text-2); line-height: 1.4; }
+    .tag { display: inline-block; background: var(--accent-dim); color: var(--accent); border-radius: 4px; font-size: 0.65rem; font-family: 'DM Mono', monospace; font-weight: 600; padding: 1px 7px; margin-bottom: 8px; letter-spacing: 0.06em; }
+    .tag.new { background: var(--warning-dim); color: var(--warning); }
+    .version-bar { text-align: center; padding: 1.5rem; color: var(--text-3); font-size: 0.75rem; font-family: 'DM Mono', monospace; }
+  </style>
+</head>
+<body>
+  <nav>

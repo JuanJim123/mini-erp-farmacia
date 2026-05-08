@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — FarmaERP</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    .section-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text-3);
+      margin-bottom: 0.75rem;
+      margin-top: 0.25rem;
+    }
+    .last-update {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--text-3);
+    }
+    .risk-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .risk-row:last-child { border-bottom: none; }
+    .risk-row.vencido { background: #f8717108; border-radius: 8px; padding: 10px 8px; margin: 2px 0; }
+    .risk-name { font-size: 0.875rem; font-weight: 500; color: var(--text); }
+    .risk-sub  { font-size: 0.75rem; color: var(--text-3); font-family: 'DM Mono', monospace; }
+    .risk-sub.danger { color: var(--danger); }
+    .empty-box { text-align: center; padding: 2rem; }
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="logo">💊 FarmaERP</div>
+    <a href="index.html">Inicio</a>
+    <a href="inventario.html">Inventario</a>
+    <a href="ventas.html">Ventas</a>
+    <a href="proveedores.html">Proveedores</a>
+    <a href="dashboard.html" class="active">Dashboard</a>
+  </nav>
+
+  <div class="container">
+    <div class="header-row">
+      <div>
+        <h1>📊 Dashboard Gerencial</h1>
+        <p class="subtitle">Correlación en tiempo real entre Inventario, Ventas y Compras para la alta dirección</p>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span class="last-update" id="update-time"></span>
+        <button class="btn btn-primary" onclick="cargar()">🔄 Actualizar</button>
+      </div>
+    </div>
+
+    <!-- KPIs INVENTARIO & VENTAS -->
+    <div class="section-label">📦 Inventario & Ventas</div>
+    <div class="kpi-grid" id="kpis-ventas"></div>
+
+    <!-- KPIs COMPRAS -->
+    <div class="section-label">🏭 Compras & Proveedores</div>
+    <div class="kpi-grid" id="kpis-compras"></div>
+
+    <!-- GRÁFICAS -->
+    <div class="grid-2">
+      <div class="card">
+        <h2>📈 Ingresos últimos 7 días</h2>
+        <canvas id="chart-ventas" height="200"></canvas>
+      </div>
+      <div class="card">
+        <h2>🗂️ Stock por categoría</h2>
+        <canvas id="chart-cat" height="200"></canvas>
+      </div>
+    </div>
+
+    <!-- TOP VENDIDOS + STOCK CRÍTICO -->
+    <div class="grid-2">
+      <div class="card">
+        <h2>🏆 Top 5 medicamentos más vendidos</h2>
+        <table>
+          <thead><tr><th>Medicamento</th><th>Unidades</th><th>Ingresos</th></tr></thead>
+          <tbody id="top-tbody"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h2>⚠️ Alertas de stock crítico</h2>
+        <div id="stock-critico"></div>
+      </div>
+    </div>
+
+    <!-- ÓRDENES + VENCIMIENTOS -->
+    <div class="grid-2">
+      <div class="card">
+        <h2>📋 Órdenes de compra recientes</h2>
+        <div id="ordenes-recientes"></div>
+      </div>
+      <div class="card">
+        <h2>📅 Control de vencimientos</h2>
+        <div id="vencimientos"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = 'http://localhost:5000/api';
+    let chartVentas, chartCat;
+
+    Chart.defaults.color = '#64748b';
+    Chart.defaults.borderColor = '#1e2d45';
+
+    async function cargar() {
+      const [rD, rO] = await Promise.all([
+        fetch(`${API}/dashboard`),
+        fetch(`${API}/ordenes`)
+      ]);
+      const d      = await rD.json();
+      const ordenes = await rO.json();
+
+      renderKPIsVentas(d.kpis);
+      renderKPIsCompras(ordenes);
+      renderChartVentas(d.ventas_por_dia);
+      renderChartCat(d.por_categoria);
+      renderTop(d.top_vendidos);
+      renderStockCritico(d.stock_bajo);
+      renderOrdenesRecientes(ordenes.slice(0, 6));
+      renderVencimientos(d.vencimientos_detalle || []);
+
+      document.getElementById('update-time').textContent =
+        'Actualizado: ' + new Date().toLocaleTimeString('es');
+    }
+
+    // ── KPIs VENTAS ────────────────────────────────────────────────────────
+
+    function renderKPIsVentas(k) {
+      document.getElementById('kpis-ventas').innerHTML = `
+        <div class="kpi-card info">
+          <div class="kpi-accent"></div>
+          <div class="kpi-label">Medicamentos</div>
+          <div class="kpi-value">${k.total_medicamentos}</div>
+          <div class="kpi-sub">en catálogo</div>
+        </div>
+        <div class="kpi-card danger">
+          <div class="kpi-accent"></div>
+          <div class="kpi-label">Stock crítico</div>
+          <div class="kpi-value">${k.stock_critico}</div>
+          <div class="kpi-sub">bajo el mínimo</div>
+        </div>
+        <div class="kpi-card warning">
+          <div class="kpi-accent"></div>
+          <div class="kpi-label">Vencen pronto</div>
+          <div class="kpi-value">${k.vencimientos_proximos}</div>
+          <div class="kpi-sub">próximos 30 días</div>
+        </div>
+        <div class="kpi-card danger">
+          <div class="kpi-accent"></div>
+          <div class="kpi-label">Ya vencidos</div>
+          <div class="kpi-value">${k.total_vencidos}</div>
+          <div class="kpi-sub">retirar del estante</div>
+        </div>
+        <div class="kpi-card success">
+          <div class="kpi-accent"></div>
+          <div class="kpi-label">Ingresos hoy</div>
+          <div class="kpi-value" style="font-size:1.5rem">Q ${k.ingresos_hoy.toFixed(2)}</div>
+          <div class="kpi-sub">${k.total_ventas} ventas totales</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-accent"></div>
+          <div class="kpi-label">Ingresos del mes</div>
+          <div class="kpi-value" style="font-size:1.5rem">Q ${k.ingresos_mes.toFixed(2)}</div>
+          <div class="kpi-sub">mes actual</div>
+        </div>`;
+    }
+
+    // ── KPIs COMPRAS ───────────────────────────────────────────────────────
+
+    function renderKPIsCompras(ordenes) {
+      const pendientes = ordenes.filter(o => o.estado === 'pendiente').length;
+      const aprobadas  = ordenes.filter(o => o.estado === 'aprobada').length;
+      const mesActual  = new Date().toISOString().slice(0, 7);
+      const gastoMes   = ordenes
+        .filter(o => o.estado === 'recibida' && o.fecha && o.fecha.slice(0, 7) === mesActual)
+        .reduce((s, o) => s + parseFloat(o.costo_total), 0);
+
+      document.getElementById('kpis-compras').innerHTML = `
+        <div class="kpi-card warning">
+          <div class="kpi-accent"></div>
+          <div class="kpi-label">Órdenes pendientes</div>
+          <div class="kpi-value">${pendientes}</div>
+          <div class="kpi-sub">requieren aprobación</div>
+        </div>
+        <div class="kpi-card indigo">
+          <div class="kpi-accent"></div>
+          <div class="kpi-label">Órdenes aprobadas</div>
+          <div class="kpi-value">${aprobadas}</div>
+          <div class="kpi-sub">en tránsito</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-accent"></div>
+          <div class="kpi-label">Gasto compras/mes</div>
+          <div class="kpi-value" style="font-size:1.5rem">Q ${gastoMes.toFixed(2)}</div>
+          <div class="kpi-sub">órdenes recibidas</div>
+        </div>
+        <div class="kpi-card success">
+          <div class="kpi-accent"></div>
+          <div class="kpi-label">Total órdenes</div>
+          <div class="kpi-value">${ordenes.length}</div>
+          <div class="kpi-sub">historial completo</div>
+        </div>`;
+    }
+
+    // ── GRÁFICAS ───────────────────────────────────────────────────────────
+
+    function renderChartVentas(data) {
+      if (chartVentas) chartVentas.destroy();
+      chartVentas = new Chart(document.getElementById('chart-ventas'), {
+        type: 'bar',
+        data: {
+          labels: data.map(d => d.dia).reverse(),
+          datasets: [{
+            label: 'Ingresos (Q)',
+            data: data.map(d => d.total).reverse(),
+            backgroundColor: '#00d4aa33',
+            borderColor: '#00d4aa',
+            borderWidth: 2,
+            borderRadius: 6,
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { grid: { color: '#1e2d45' }, ticks: { color: '#4a6080' } },
+            y: { beginAtZero: true, grid: { color: '#1e2d45' }, ticks: { color: '#4a6080' } }
+          }
+        }
+      });
+    }
+
+    function renderChartCat(data) {
+      if (chartCat) chartCat.destroy();
+      const colors = ['#00d4aa','#818cf8','#fbbf24','#f87171','#34d399','#60a5fa','#c084fc','#fb923c'];
+      chartCat = new Chart(document.getElementById('chart-cat'), {
+        type: 'doughnut',
+        data: {
+          labels: data.map(d => d.categoria),
+          datasets: [{
+            data: data.map(d => d.stock_total),
+            backgroundColor: colors.map(c => c + '44'),
+            borderColor: colors,
+            borderWidth: 2,
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: 'bottom', labels: { color: '#94a3b8', padding: 12 } }
+          }
+        }
+      });
+    }
+
+    // ── TOP VENDIDOS ───────────────────────────────────────────────────────
+
+    function renderTop(data) {
+      if (!data.length) {
+        document.getElementById('top-tbody').innerHTML =
+          '<tr><td colspan="3" style="text-align:center;color:var(--text-3);padding:1.5rem">Sin ventas aún</td></tr>';
+        return;
+      }
+      const max = data[0].unidades;
+      document.getElementById('top-tbody').innerHTML = data.map((m, i) => `
+        <tr>
+          <td>
+            <div style="color:var(--text)">${['🥇','🥈','🥉','4️⃣','5️⃣'][i]} ${m.nombre}</div>
+            <div class="bar-wrap" style="margin-top:6px">
+              <div class="bar-fill" style="width:${(m.unidades/max*100).toFixed(0)}%;background:var(--accent)"></div>
+            </div>
+          </td>
+          <td style="font-family:'DM Mono',monospace">${m.unidades}</td>
+          <td style="color:var(--success);font-family:'DM Mono',monospace">Q ${parseFloat(m.ingresos).toFixed(2)}</td>
+        </tr>`).join('');
+    }
+
+    // ── STOCK CRÍTICO ──────────────────────────────────────────────────────
+
+    function renderStockCritico(data) {
+      if (!data.length) {
+        document.getElementById('stock-critico').innerHTML =
+          '<div class="empty-box" style="color:var(--success)">✅ Todo el stock está en niveles normales</div>';
+        return;
+      }
+      document.getElementById('stock-critico').innerHTML = data.map(m => `
+        <div class="risk-row">
+          <div>
+            <div class="risk-name">${m.nombre}</div>
+            <div class="risk-sub">Mínimo: ${m.stock_minimo}</div>
+          </div>
+          <span class="badge ${m.stock === 0 ? 'badge-danger' : 'badge-warning'}">
+            ${m.stock === 0 ? 'Sin stock' : `${m.stock} uds`}
+          </span>
+        </div>`).join('');
+    }
+
+    // ── ÓRDENES RECIENTES ──────────────────────────────────────────────────
+
+    function renderOrdenesRecientes(ordenes) {
+      if (!ordenes.length) {
+        document.getElementById('ordenes-recientes').innerHTML =
+          '<div class="empty-box" style="color:var(--text-3)">Sin órdenes de compra</div>';
+        return;
+      }
+      const badge = e =>
+        e === 'pendiente' ? 'badge-warning' :
+        e === 'aprobada'  ? 'badge-info'    : 'badge-success';
+
+      document.getElementById('ordenes-recientes').innerHTML = ordenes.map(o => `
+        <div class="risk-row">
+          <div>
+            <div class="risk-name">${o.medicamento_nombre}</div>
+            <div class="risk-sub">${o.proveedor_nombre} · ${o.cantidad} uds</div>
+          </div>
+          <span class="badge ${badge(o.estado)}">${o.estado}</span>
+        </div>`).join('');
+    }
+
+    // ── VENCIMIENTOS ───────────────────────────────────────────────────────
+
+    function renderVencimientos(data) {
+      if (!data.length) {
+        document.getElementById('vencimientos').innerHTML =
+          '<div class="empty-box" style="color:var(--success)">✅ Sin vencimientos próximos ni caducados</div>';
+        return;
+      }
+
+      const hoy = new Date().toISOString().slice(0, 10);
+
+      // Separar en dos grupos
+      const vencidos  = data.filter(m => m.fecha_vencimiento < hoy);
+      const proximos  = data.filter(m => m.fecha_vencimiento >= hoy);
+
+      let html = '';
+
+      // Primero los ya vencidos con encabezado rojo
+      if (vencidos.length) {
+        html += `<div style="font-family:'DM Mono',monospace;font-size:0.68rem;text-transform:uppercase;
+                             letter-spacing:0.08em;color:var(--danger);margin-bottom:6px;margin-top:4px">
+                   ❌ Caducados — retirar del estante
+                 </div>`;
+        html += vencidos.map(m => `
+          <div class="risk-row vencido">
+            <div>
+              <div class="risk-name">${m.nombre}</div>
+              <div class="risk-sub danger">Venció el ${m.fecha_vencimiento} · Stock: ${m.stock}</div>
+            </div>
+            <span class="badge badge-danger">VENCIDO</span>
+          </div>`).join('');
+      }
+
+      // Luego los próximos a vencer
+      if (proximos.length) {
+        if (vencidos.length) {
+          html += `<div style="height:1px;background:var(--border);margin:10px 0"></div>`;
+        }
+        html += `<div style="font-family:'DM Mono',monospace;font-size:0.68rem;text-transform:uppercase;
+                             letter-spacing:0.08em;color:var(--warning);margin-bottom:6px">
+                   ⚠️ Vencen en los próximos 30 días
+                 </div>`;
+        html += proximos.map(m => `
+          <div class="risk-row">
+            <div>
+              <div class="risk-name">${m.nombre}</div>
+              <div class="risk-sub">Vence el ${m.fecha_vencimiento} · Stock: ${m.stock}</div>
+            </div>
+            <span class="badge badge-warning">PRÓXIMO</span>
+          </div>`).join('');
+      }
+
+      document.getElementById('vencimientos').innerHTML = html;
+    }
+
+    // ── INIT ───────────────────────────────────────────────────────────────
+
+    cargar();
+    setInterval(cargar, 30000);
+  </script>
+</body>
+</html>

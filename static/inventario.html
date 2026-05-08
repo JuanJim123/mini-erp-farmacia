@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inventario — FarmaERP</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav>
+    <div class="logo">💊 FarmaERP</div>
+    <a href="index.html">Inicio</a>
+    <a href="inventario.html" class="active">Inventario</a>
+    <a href="ventas.html">Ventas</a>
+    <a href="proveedores.html">Proveedores</a>
+    <a href="dashboard.html">Dashboard</a>
+  </nav>
+  <div class="container">
+    <div class="header-row">
+      <div>
+        <h1>📦 Inventario de Medicamentos</h1>
+        <p class="subtitle">Gestiona tu catálogo de productos y niveles de stock</p>
+      </div>
+      <button class="btn btn-primary" onclick="abrirModal()">+ Nuevo medicamento</button>
+    </div>
+    <input type="text" class="search-bar" placeholder="🔍 Buscar por nombre o categoría..." id="buscar" oninput="filtrar()">
+    <div id="alertas"></div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr><th>Nombre</th><th>Categoría</th><th>Precio</th><th>Stock</th><th>Mín.</th><th>Vencimiento</th><th>Estado</th><th>Acciones</th></tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal">
+    <div class="modal">
+      <h3 id="modal-titulo">Nuevo Medicamento</h3>
+      <div class="form-grid">
+        <div class="form-group" style="grid-column:1/-1">
+          <label>Nombre del medicamento</label>
+          <input type="text" id="f-nombre" placeholder="Ej: Paracetamol 500mg">
+        </div>
+        <div class="form-group">
+          <label>Categoría</label>
+          <select id="f-categoria">
+            <option>Analgésico</option><option>Antibiótico</option>
+            <option>Antiinflamatorio</option><option>Antihistamínico</option>
+            <option>Gastro</option><option>Antidiabético</option>
+            <option>Cardiovascular</option><option>Suplemento</option><option>Otro</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Precio (Q)</label>
+          <input type="number" id="f-precio" step="0.01" min="0" placeholder="0.00">
+        </div>
+        <div class="form-group">
+          <label>Stock actual</label>
+          <input type="number" id="f-stock" min="0" placeholder="0">
+        </div>
+        <div class="form-group">
+          <label>Stock mínimo</label>
+          <input type="number" id="f-stockmin" min="0" value="10">
+        </div>
+        <div class="form-group">
+          <label>Fecha de vencimiento</label>
+          <input type="date" id="f-vencimiento">
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+          <button class="btn btn-primary" onclick="guardar()">Guardar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = 'http://localhost:5000/api';
+    let meds = [], editId = null;
+
+    async function cargar() {
+      const r = await fetch(`${API}/medicamentos`);
+      meds = await r.json();
+      renderAlertas(); renderTabla(meds);
+    }
+
+    function renderAlertas() {
+      const criticos = meds.filter(m => m.stock <= m.stock_minimo);
+      const en30 = new Date(); en30.setDate(en30.getDate() + 30);
+      const vencen = meds.filter(m => m.fecha_vencimiento && new Date(m.fecha_vencimiento) <= en30);
+      let html = '';
+      if (criticos.length) html += `<div class="alert alert-danger">⚠️ ${criticos.length} medicamento(s) con stock crítico: ${criticos.map(m => m.nombre).join(', ')}</div>`;
+      if (vencen.length)   html += `<div class="alert alert-warning">📅 ${vencen.length} medicamento(s) vencen en los próximos 30 días</div>`;
+      document.getElementById('alertas').innerHTML = html;
+    }
+
+    function renderTabla(lista) {
+      const en30 = new Date(); en30.setDate(en30.getDate() + 30);
+      if (!lista.length) {
+        document.getElementById('tbody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-3);padding:2rem">Sin medicamentos registrados</td></tr>';
+        return;
+      }
+      document.getElementById('tbody').innerHTML = lista.map(m => {
+        let estado = `<span class="badge badge-success">OK</span>`;
+        if (m.stock === 0) estado = `<span class="badge badge-danger">Sin stock</span>`;
+        else if (m.stock <= m.stock_minimo) estado = `<span class="badge badge-danger">Crítico</span>`;
+        else if (m.stock <= m.stock_minimo * 1.5) estado = `<span class="badge badge-warning">Bajo</span>`;
+        if (m.fecha_vencimiento && new Date(m.fecha_vencimiento) <= en30)
+          estado += ` <span class="badge badge-warning">Vence pronto</span>`;
+        return `<tr>
+          <td><strong style="color:var(--text)">${m.nombre}</strong></td>
+          <td>${m.categoria}</td>
+          <td style="color:var(--accent);font-family:'DM Mono',monospace">Q ${parseFloat(m.precio).toFixed(2)}</td>
+          <td style="font-family:'DM Mono',monospace">${m.stock}</td>
+          <td style="color:var(--text-3);font-family:'DM Mono',monospace">${m.stock_minimo}</td>
+          <td style="font-family:'DM Mono',monospace">${m.fecha_vencimiento || '—'}</td>
+          <td>${estado}</td>
+          <td style="display:flex;gap:6px">
+            <button class="btn btn-sm btn-success" onclick="editar(${m.id})">✏️</button>
+            <button class="btn btn-sm btn-danger" onclick="eliminar(${m.id})">🗑️</button>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    function filtrar() {
+      const q = document.getElementById('buscar').value.toLowerCase();
+      renderTabla(meds.filter(m => m.nombre.toLowerCase().includes(q) || m.categoria.toLowerCase().includes(q)));
+    }
+
+    function abrirModal(med = null) {
+      editId = med ? med.id : null;
+      document.getElementById('modal-titulo').textContent = med ? 'Editar Medicamento' : 'Nuevo Medicamento';
+      document.getElementById('f-nombre').value    = med?.nombre || '';
+      document.getElementById('f-categoria').value = med?.categoria || 'Analgésico';
+      document.getElementById('f-precio').value    = med?.precio || '';
+      document.getElementById('f-stock').value     = med?.stock || '';
+      document.getElementById('f-stockmin').value  = med?.stock_minimo || 10;
+      document.getElementById('f-vencimiento').value = med?.fecha_vencimiento || '';
+      document.getElementById('modal').classList.add('open');
+    }
+    function cerrarModal() { document.getElementById('modal').classList.remove('open'); }
+
+    async function guardar() {
+      const data = {
+        nombre: document.getElementById('f-nombre').value.trim(),
+        categoria: document.getElementById('f-categoria').value,
+        precio: parseFloat(document.getElementById('f-precio').value),
+        stock: parseInt(document.getElementById('f-stock').value),
+        stock_minimo: parseInt(document.getElementById('f-stockmin').value),
+        fecha_vencimiento: document.getElementById('f-vencimiento').value,
+      };
+      if (!data.nombre || isNaN(data.precio) || isNaN(data.stock)) { alert('Completa todos los campos'); return; }
+      const url = editId ? `${API}/medicamentos/${editId}` : `${API}/medicamentos`;
+      const method = editId ? 'PUT' : 'POST';
+      await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+      cerrarModal(); cargar();
+    }
+
+    function editar(id) { abrirModal(meds.find(m => m.id === id)); }
+
+    async function eliminar(id) {
+      if (!confirm('¿Eliminar este medicamento?')) return;
+      await fetch(`${API}/medicamentos/${id}`, { method: 'DELETE' });
+      cargar();
+    }
+
+    cargar();
+  </script>
+</body>
+</html>

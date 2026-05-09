@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ventas — FarmaERP</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .total-box { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; text-align: center; }
+    .total-box .label { font-size: 0.75rem; color: var(--text-3); font-family: 'DM Mono', monospace; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+    .total-box .amount { font-family: 'Syne', sans-serif; font-size: 2.2rem; font-weight: 800; color: var(--success); letter-spacing: -0.03em; }
+    .info-box { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; font-size: 0.85rem; display: none; gap: 1rem; }
+    .info-box.visible { display: flex; }
+    .info-item { display: flex; flex-direction: column; gap: 2px; }
+    .info-item span:first-child { font-size: 0.7rem; color: var(--text-3); font-family: 'DM Mono', monospace; text-transform: uppercase; }
+    .info-item span:last-child  { font-weight: 600; color: var(--accent); font-family: 'DM Mono', monospace; }
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="logo">💊 FarmaERP</div>
+    <a href="index.html">Inicio</a>
+    <a href="inventario.html">Inventario</a>
+    <a href="ventas.html" class="active">Ventas</a>
+    <a href="proveedores.html">Proveedores</a>
+    <a href="dashboard.html">Dashboard</a>
+  </nav>
+  <div class="container">
+    <h1>🛒 Registro de Ventas</h1>
+    <p class="subtitle">Procesa ventas al mostrador — el stock se descuenta automáticamente en inventario</p>
+    <div class="grid-2">
+      <div class="card">
+        <h2>Nueva Venta</h2>
+        <div style="display:flex;flex-direction:column;gap:1rem">
+          <div class="form-group">
+            <label>Medicamento</label>
+            <select id="v-med" onchange="actualizarInfo()">
+              <option value="">Selecciona un medicamento...</option>
+            </select>
+          </div>
+          <div class="info-box" id="info-med">
+            <div class="info-item"><span>Precio unit.</span><span id="info-precio">—</span></div>
+            <div class="info-item"><span>Stock disp.</span><span id="info-stock">—</span></div>
+            <div class="info-item"><span>Categoría</span><span id="info-cat">—</span></div>
+          </div>
+          <div class="form-group">
+            <label>Cantidad</label>
+            <input type="number" id="v-cantidad" min="1" value="1" oninput="calcularTotal()">
+          </div>
+          <div class="total-box">
+            <div class="label">Total a cobrar</div>
+            <div class="amount" id="v-total">Q 0.00</div>
+          </div>
+          <button class="btn btn-primary" onclick="registrarVenta()" style="width:100%;padding:12px;justify-content:center;font-size:0.95rem">
+            ✅ Registrar Venta
+          </button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Últimas Ventas</h2>
+        <table>
+          <thead><tr><th>Medicamento</th><th>Cant.</th><th>Total</th><th>Fecha</th></tr></thead>
+          <tbody id="tbody-ventas"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = 'http://localhost:5000/api';
+    let meds = [];
+
+    async function cargar() {
+      const r = await fetch(`${API}/medicamentos`);
+      meds = await r.json();
+      const sel = document.getElementById('v-med');
+      sel.innerHTML = '<option value="">Selecciona un medicamento...</option>' +
+        meds.map(m => `<option value="${m.id}" ${m.stock===0?'disabled':''}>${m.nombre}${m.stock===0?' — Sin stock':` (${m.stock} uds)`}</option>`).join('');
+      cargarVentas();
+    }
+
+    async function cargarVentas() {
+      const r = await fetch(`${API}/ventas`);
+      const ventas = await r.json();
+      document.getElementById('tbody-ventas').innerHTML = ventas.slice(0,20).map(v => `
+        <tr>
+          <td style="color:var(--text)">${v.medicamento_nombre}</td>
+          <td style="font-family:'DM Mono',monospace">${v.cantidad}</td>
+          <td style="color:var(--success);font-family:'DM Mono',monospace">Q ${parseFloat(v.total).toFixed(2)}</td>
+          <td style="color:var(--text-3);font-family:'DM Mono',monospace;font-size:0.78rem">${v.fecha?v.fecha.slice(0,16).replace('T',' '):'—'}</td>
+        </tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-3);padding:2rem">Sin ventas registradas aún</td></tr>';
+    }
+
+    function actualizarInfo() {
+      const med = meds.find(m => m.id == document.getElementById('v-med').value);
+      if (med) {
+        document.getElementById('info-med').classList.add('visible');
+        document.getElementById('info-precio').textContent = `Q ${parseFloat(med.precio).toFixed(2)}`;
+        document.getElementById('info-stock').textContent  = med.stock;
+        document.getElementById('info-cat').textContent    = med.categoria;
+        calcularTotal();
+      } else {
+        document.getElementById('info-med').classList.remove('visible');
+        document.getElementById('v-total').textContent = 'Q 0.00';
+      }
+    }
+
+    function calcularTotal() {
+      const med  = meds.find(m => m.id == document.getElementById('v-med').value);
+      const cant = parseInt(document.getElementById('v-cantidad').value) || 0;
+      document.getElementById('v-total').textContent = med ? `Q ${(med.precio*cant).toFixed(2)}` : 'Q 0.00';
+    }
+
+    async function registrarVenta() {
+      const med_id   = parseInt(document.getElementById('v-med').value);
+      const cantidad = parseInt(document.getElementById('v-cantidad').value);
+      if (!med_id || cantidad < 1) { alert('Selecciona un medicamento y cantidad válida'); return; }
+      const r = await fetch(`${API}/ventas`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({medicamento_id:med_id, cantidad})
+      });
+      const data = await r.json();
+      if (!r.ok) { alert('⚠️ ' + data.error); return; }
+      alert(`✅ Venta registrada — Total: Q ${data.total.toFixed(2)}`);
+      document.getElementById('v-med').value = '';
+      document.getElementById('v-cantidad').value = 1;
+      document.getElementById('v-total').textContent = 'Q 0.00';
+      document.getElementById('info-med').classList.remove('visible');
+      cargar();
+    }
+
+    cargar();
+  </script>
+</body>
+</html>
